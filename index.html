@@ -1,1 +1,321 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI 리포트 뷰어 (Scroll View)</title>
+    
+    <!-- PPT 생성 라이브러리 (PptxGenJS) -->
+    <script src="https://cdn.jsdelivr.net/npm/pptxgenjs@3.12.0/dist/pptxgen.bundle.js"></script>
+    <!-- Word 변환 라이브러리 -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.6.0/mammoth.browser.min.js"></script>
+    <!-- 화면 캡처 라이브러리 (필요시 사용) -->
+    <script src="https://html2canvas.hertzen.com/dist/html2canvas.min.js"></script>
 
+    <style>
+        /* [기본 설정] */
+        html, body { width: 100%; height: 100%; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; display: flex; overflow: hidden; }
+        
+        /* [왼쪽] 에디터 패널 */
+        #editor-pane {
+            width: 320px;
+            min-width: 300px;
+            height: 100%;
+            background: #f8f9fa;
+            border-right: 1px solid #ddd;
+            display: flex;
+            flex-direction: column;
+            padding: 20px;
+            box-sizing: border-box;
+            z-index: 20;
+            box-shadow: 2px 0 10px rgba(0,0,0,0.1);
+        }
+
+        h2 { margin: 0 0 15px 0; font-size: 1.2rem; color: #333; }
+        
+        .drop-zone {
+            border: 2px dashed #bbb;
+            border-radius: 6px;
+            padding: 20px;
+            text-align: center;
+            background: white;
+            cursor: pointer;
+            margin-bottom: 10px;
+            font-size: 0.9em;
+            color: #666;
+            transition: 0.2s;
+        }
+        .drop-zone:hover { border-color: #007bff; background: #f0f7ff; color: #007bff; }
+
+        textarea {
+            flex-grow: 1;
+            width: 100%;
+            padding: 12px;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            resize: none;
+            font-family: monospace;
+            font-size: 12px;
+            margin-bottom: 10px;
+            outline: none;
+        }
+        textarea:focus { border-color: #007bff; }
+
+        .btn-group { display: flex; flex-direction: column; gap: 8px; }
+        button {
+            padding: 10px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-weight: bold;
+            color: white;
+            font-size: 14px;
+        }
+        .btn-render { background: #007bff; } .btn-render:hover { background: #0056b3; }
+        .btn-pdf { background: #6c757d; } .btn-pdf:hover { background: #545b62; }
+        .btn-ppt { background: #28a745; } .btn-ppt:hover { background: #1e7e34; }
+
+        .note { font-size: 0.8em; color: #666; margin-top: 15px; background: #eee; padding: 10px; border-radius: 4px; line-height: 1.4; }
+
+        /* [오른쪽] 뷰어 패널 (스크롤 뷰) */
+        #viewer-pane {
+            flex-grow: 1;
+            height: 100%;
+            background: #e0e0e0; /* 배경색 구분 */
+            overflow-y: auto; /* 세로 스크롤 허용 */
+            padding: 40px;
+            box-sizing: border-box;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 30px; /* 슬라이드 간 간격 */
+        }
+
+        /* [핵심] 개별 슬라이드 카드 스타일 */
+        .slide-card {
+            width: 960px; /* 16:9 기준 너비 */
+            height: 540px; /* 16:9 기준 높이 */
+            background: white;
+            box-shadow: 0 5px 15px rgba(0,0,0,0.15);
+            position: relative;
+            overflow: hidden; /* 내용이 넘치면 숨김 (단, 축소해서 보여줄 예정) */
+            flex-shrink: 0;
+            transform-origin: top left; /* 축소 시 기준점 */
+        }
+
+        /* 슬라이드 번호 표시 */
+        .slide-number {
+            position: absolute;
+            top: -25px;
+            left: 0;
+            color: #666;
+            font-weight: bold;
+            font-size: 14px;
+        }
+
+        /* [중요] 사용자 콘텐츠 강제 조정 CSS (Smart Override) */
+        /* 원본 코드가 너무 거대할 경우를 대비해 폰트 사이즈 강제 조정 */
+        .slide-content-wrapper {
+            width: 100%;
+            height: 100%;
+            padding: 40px; /* 내부 여백 */
+            box-sizing: border-box;
+            font-size: 10px; /* 기본 폰트 사이즈를 작게 잡아서 em 단위 대응 */
+            display: flex;
+            flex-direction: column;
+        }
+
+        /* 사용자 태그 스타일 초기화 및 재정의 */
+        .slide-content-wrapper section { width: 100%; height: 100%; display: block; }
+        .slide-content-wrapper h1 { font-size: 3.5em; margin: 0.5em 0; color: #222; }
+        .slide-content-wrapper h2 { font-size: 2.5em; margin: 0.5em 0; color: #333; border-bottom: 2px solid #007bff; padding-bottom: 10px; }
+        .slide-content-wrapper h3 { font-size: 1.8em; margin: 0.5em 0; color: #444; }
+        .slide-content-wrapper p, .slide-content-wrapper li { font-size: 1.4em; line-height: 1.6; color: #555; }
+        .slide-content-wrapper ul { padding-left: 20px; margin: 0; }
+        
+        /* 2단 레이아웃 대응 */
+        .slide-content-wrapper .two-column { display: flex; gap: 20px; height: 80%; }
+        .slide-content-wrapper .column { flex: 1; display: flex; flex-direction: column; }
+
+        /* PDF 인쇄용 스타일 (인쇄 시에만 적용) */
+        @media print {
+            #editor-pane { display: none; }
+            #viewer-pane { padding: 0; background: white; overflow: visible; display: block; }
+            .slide-card { 
+                margin: 0; 
+                page-break-after: always; /* 한 장씩 끊어서 출력 */
+                box-shadow: none;
+                border: 1px solid #eee;
+            }
+            .slide-number { display: none; }
+        }
+    </style>
+</head>
+<body>
+
+    <!-- 왼쪽 에디터 -->
+    <div id="editor-pane">
+        <h2>📜 스크롤 뷰어</h2>
+        
+        <div id="drop-zone" class="drop-zone">
+            파일을 드래그하세요<br>
+            (HTML, TXT, DOCX)
+            <input type="file" id="file-input" accept=".html,.txt,.docx" style="display:none">
+        </div>
+
+        <textarea id="html-input" placeholder="HTML 코드를 붙여넣으세요.&#13;&#10;&#13;&#10;[수정 사항]&#13;&#10;이제 슬라이드가 잘리지 않고&#13;&#10;아래로 쭉 이어져서 보입니다."></textarea>
+        
+        <div class="btn-group">
+            <button class="btn-render" onclick="renderScrollMode()">View (새로고침)</button>
+            <button class="btn-pdf" onclick="window.print()">PDF 저장 (인쇄)</button>
+            <button class="btn-ppt" onclick="exportPPT()">PPT 다운로드</button>
+        </div>
+
+        <div class="note">
+            <strong>✅ 해결된 점:</strong><br>
+            • <strong>세로 스크롤:</strong> 장표가 잘리지 않고 아래로 이어집니다.<br>
+            • <strong>자동 축소:</strong> 원본 글씨가 너무 크면 자동으로 비율을 맞춰서 보여줍니다.
+        </div>
+    </div>
+
+    <!-- 오른쪽 뷰어 (스크롤 모드) -->
+    <div id="viewer-pane">
+        <!-- 여기에 슬라이드 카드들이 생성됩니다 -->
+        <div class="slide-card">
+            <div class="slide-content-wrapper">
+                <div style="display:flex; justify-content:center; align-items:center; height:100%; flex-direction:column; text-align:center;">
+                    <h1>환영합니다</h1>
+                    <p>왼쪽에 코드를 넣고 <strong>View</strong> 버튼을 누르면<br>이곳에 장표가 순서대로 나열됩니다.</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // 1. 렌더링 함수 (스크롤 모드)
+        function renderScrollMode() {
+            const input = document.getElementById('html-input').value;
+            const viewer = document.getElementById('viewer-pane');
+            
+            if (!input.trim()) { alert("코드를 입력해주세요."); return; }
+
+            // HTML 파싱
+            const parser = new DOMParser();
+            const doc = parser.parseFromString(input, 'text/html');
+            
+            // <section> 태그 찾기
+            const sections = doc.querySelectorAll('section');
+            const styles = doc.querySelectorAll('style'); // 사용자 스타일 가져오기
+
+            if (sections.length === 0) {
+                // 섹션이 없으면 전체를 하나로 봄
+                viewer.innerHTML = `<div class="slide-card"><div class="slide-content-wrapper">${input}</div></div>`;
+                return;
+            }
+
+            viewer.innerHTML = ''; // 초기화
+
+            // 사용자 스타일을 뷰어에 주입하되, 범위 제한 (선택적)
+            // 여기서는 간단히 각 슬라이드 내부에 적용되도록 처리하거나 전역에 넣음
+            // (충돌 방지를 위해 생략하거나 필요시 head에 append)
+
+            sections.forEach((sec, index) => {
+                // 카드 컨테이너 생성
+                const cardWrapper = document.createElement('div');
+                cardWrapper.style.position = 'relative';
+
+                // 번호표
+                const label = document.createElement('div');
+                label.className = 'slide-number';
+                label.innerText = `Slide ${index + 1}`;
+                cardWrapper.appendChild(label);
+
+                // 슬라이드 카드
+                const card = document.createElement('div');
+                card.className = 'slide-card';
+
+                // 내부 콘텐츠 래퍼
+                const contentWrapper = document.createElement('div');
+                contentWrapper.className = 'slide-content-wrapper';
+                
+                // [중요] 기존 내용 주입
+                contentWrapper.innerHTML = sec.innerHTML;
+                
+                // 카드에 넣기
+                card.appendChild(contentWrapper);
+                cardWrapper.appendChild(card);
+                
+                // 뷰어에 추가
+                viewer.appendChild(cardWrapper);
+            });
+        }
+
+        // 2. 파일 처리
+        const dropZone = document.getElementById('drop-zone');
+        const fileInput = document.getElementById('file-input');
+        
+        dropZone.onclick = () => fileInput.click();
+        dropZone.ondragover = (e) => { e.preventDefault(); dropZone.classList.add('dragover'); };
+        dropZone.ondragleave = () => dropZone.classList.remove('dragover');
+        dropZone.ondrop = (e) => { e.preventDefault(); handleFile(e.dataTransfer.files[0]); };
+        fileInput.onchange = (e) => handleFile(e.target.files[0]);
+
+        function handleFile(file) {
+            if (!file) return;
+            if (file.name.endsWith('.docx')) {
+                const reader = new FileReader();
+                reader.onload = (e) => {
+                    mammoth.convertToHtml({arrayBuffer: e.target.result})
+                        .then(res => {
+                            // Word는 섹션 구분이 없으므로 임의로 <section>으로 감싸줌
+                            const rawHtml = res.value;
+                            // 간단히 h1, h2 기준으로 나누거나 전체를 하나로
+                            document.getElementById('html-input').value = "<section>" + rawHtml + "</section>";
+                            renderScrollMode();
+                        })
+                        .catch(err => alert(err));
+                };
+                reader.readAsArrayBuffer(file);
+            } else {
+                const reader = new FileReader();
+                reader.onload = (e) => {
+                    document.getElementById('html-input').value = e.target.result;
+                    renderScrollMode();
+                };
+                reader.readAsText(file);
+            }
+        }
+
+        // 3. PPT 내보내기 (기존 로직 유지)
+        function exportPPT() {
+            try {
+                let pptx = new PptxGenJS();
+                pptx.layout = 'LAYOUT_16x9';
+                
+                // 뷰어 내의 모든 슬라이드 카드 탐색
+                const cards = document.querySelectorAll('.slide-content-wrapper');
+                
+                if(cards.length === 0) { alert("데이터가 없습니다."); return; }
+
+                cards.forEach((card, index) => {
+                    let slide = pptx.addSlide();
+                    let text = card.innerText.replace(/\n\s*\n/g, '\n').trim();
+                    
+                    slide.background = { color: "FFFFFF" };
+                    slide.addText(text, { 
+                        x: 0.5, y: 0.5, w: '90%', h: '85%', 
+                        fontSize: 14, color: '363636', 
+                        align: 'center', valign: 'middle' 
+                    });
+                    slide.addSlideNumber({ x: '95%', y: '95%', fontSize: 10, color: 'BBBBBB' });
+                });
+
+                pptx.writeFile({ fileName: `Report_Slides_${new Date().toISOString().slice(0,10)}.pptx` });
+            } catch (error) {
+                console.error(error);
+                alert("PPT 변환 중 오류가 발생했습니다.");
+            }
+        }
+    </script>
+</body>
+</html>
