@@ -3,6 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <!-- [수정] 타이틀을 'FACT BOOK'으로 설정 (PDF 파일명) -->
     <title>FACT BOOK</title>
     
     <!-- Google Fonts -->
@@ -10,6 +11,7 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&family=Noto+Sans+KR:wght@400;500;700&display=swap" rel="stylesheet">
 
+    <!-- Libraries -->
     <script src="https://cdn.jsdelivr.net/npm/pptxgenjs@3.12.0/dist/pptxgen.bundle.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.6.0/mammoth.browser.min.js"></script>
     <script src="https://html2canvas.hertzen.com/dist/html2canvas.min.js"></script>
@@ -30,7 +32,7 @@
             background-color: var(--dark-bg);
         }
         
-        /* 왼쪽 패널 */
+        /* [왼쪽] 에디터 패널 */
         #editor-pane {
             width: 360px; min-width: 320px; height: 100%;
             background: var(--panel-bg);
@@ -69,12 +71,13 @@
         .btn-pdf { background: #5f6368; }
         .btn-ppt { background: linear-gradient(135deg, #FF8C00 0%, #FF5722 100%); }
 
-        /* 오른쪽 뷰어 패널 */
+        /* [오른쪽] 뷰어 패널 */
         #viewer-pane { 
             flex-grow: 1; height: 100%; 
             background-color: #e8eaed; 
             display: flex; flex-direction: column; position: relative; 
             padding: 40px; box-sizing: border-box; align-items: center;
+            z-index: 10;
         }
         
         .iframe-container {
@@ -84,35 +87,48 @@
         }
         #sandbox-frame { width: 100%; height: 100%; border: none; background: white; }
 
-        /* 로딩 오버레이 */
+        /* [로딩 오버레이] 불투명한 배경으로 캡처 과정을 가림 */
         #loading-overlay {
-            position: absolute; top:0; left:0; right:0; bottom:0; 
-            background: rgba(255, 255, 255, 0.9); backdrop-filter: blur(5px);
-            color: #202124; display: none; 
-            justify-content: center; align-items: center; flex-direction: column; z-index: 100;
+            position: fixed; top:0; left:0; right:0; bottom:0; 
+            background: #202124; /* 완전 불투명 배경 */
+            color: white; display: none; 
+            justify-content: center; align-items: center; flex-direction: column; 
+            z-index: 9999; /* 최상위 레벨 */
         }
         .loading-spinner {
-            width: 40px; height: 40px; border: 4px solid #f3f3f3; border-top: 4px solid var(--primary);
+            width: 40px; height: 40px; border: 4px solid #444; border-top: 4px solid var(--primary);
             border-radius: 50%; animation: spin 1s linear infinite; margin-bottom: 15px;
         }
         @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
-        .progress-bar { width: 200px; height: 6px; background: #e0e0e0; border-radius: 3px; margin-top: 10px; overflow: hidden; }
-        .progress-fill { height: 100%; background: #34A853; width: 0%; transition: width 0.3s ease; }
+        .progress-bar { width: 300px; height: 6px; background: #444; border-radius: 3px; margin-top: 10px; overflow: hidden; }
+        .progress-fill { height: 100%; background: #4285F4; width: 0%; transition: width 0.3s ease; }
 
-        /* [핵심] PPT 캡처를 위한 숨겨진 스테이지 */
+        /* [핵심 수정] PPT 캡처 스테이지 */
+        /* 화면 밖이 아니라 화면 안(0,0)에 배치하여 렌더링 보장 */
+        /* 하지만 z-index를 로딩화면(9999)보다 낮게 두어 가림 */
         #capture-stage {
-            position: absolute;
-            top: 0; left: -9999px; /* 화면 밖으로 숨김 */
-            width: 1280px; /* 고해상도 캡처를 위한 고정 너비 */
+            position: fixed;
+            top: 0; left: 0; 
+            width: 1280px; /* 고해상도 */
+            height: 100%;
             background: white;
-            z-index: -1;
-            visibility: hidden; /* 사용자 눈에는 안 보임 */
+            z-index: 5000; 
+            display: none; 
+            overflow-y: auto;
         }
     </style>
 </head>
 <body>
 
+    <!-- 캡처용 스테이지 -->
     <div id="capture-stage"></div>
+
+    <!-- 로딩 오버레이 -->
+    <div id="loading-overlay">
+        <div class="loading-spinner"></div>
+        <div id="loading-text">PPT 생성 준비 중...</div>
+        <div class="progress-bar"><div id="progress-fill" class="progress-fill"></div></div>
+    </div>
 
     <div id="editor-pane">
         <h2>FACT BOOK</h2>
@@ -149,12 +165,6 @@
         <div class="iframe-container">
             <iframe id="sandbox-frame" title="FACT BOOK Viewer"></iframe>
         </div>
-        
-        <div id="loading-overlay">
-            <div class="loading-spinner"></div>
-            <div id="loading-text">처리 중...</div>
-            <div class="progress-bar"><div id="progress-fill" class="progress-fill"></div></div>
-        </div>
     </div>
 
     <script>
@@ -177,10 +187,7 @@
             // 뷰어용 스타일 주입
             const style = doc.createElement('style');
             style.textContent = `
-                /* 뷰어에서 애니메이션/블러 제거 (선명하게 보기 위함) */
                 section { opacity: 1 !important; filter: none !important; transform: none !important; transition: none !important; }
-                
-                /* PDF 인쇄 설정 */
                 @media print {
                     @page { margin: 1cm; size: auto; }
                     body { background: white; -webkit-print-color-adjust: exact; }
@@ -194,12 +201,13 @@
 
         function printIframe() {
             if (!frame.contentWindow) return;
-            // 타이틀을 잠시 FACT BOOK으로 확실히 고정 (PDF 파일명용)
+            const originalTitle = document.title;
             document.title = "FACT BOOK";
             frame.contentWindow.focus();
             frame.contentWindow.print();
         }
 
+        // [PPT 생성 로직 - 정공법]
         async function exportPPTFromClone() {
             const inputHtml = document.getElementById('html-input').value;
             if (!inputHtml.trim()) {
@@ -207,35 +215,42 @@
                 return;
             }
 
+            // 1. 화면 가리기
+            showLoading(true, 0);
+            loadingText.innerText = "문서 분석 중...";
+
+            // 2. 캡처 스테이지 준비 (화면에 그림)
+            captureStage.style.display = "block";
             captureStage.innerHTML = inputHtml;
             
+            // 스타일 강제 주입
             const style = document.createElement('style');
             style.textContent = `
                 #capture-stage nav { display: none !important; }
-                #capture-stage body { background: white; width: 1280px; overflow: hidden; }
+                #capture-stage body { background: white; width: 1280px; overflow: hidden; margin: 0; padding: 0; }
                 #capture-stage main { margin-left: 0 !important; padding: 40px !important; width: 100% !important; box-sizing: border-box; }
                 #capture-stage section { 
                     opacity: 1 !important; filter: none !important; transform: none !important; 
                     margin-bottom: 50px !important; box-shadow: none !important; border: none !important;
                     page-break-after: always;
                     background: white; 
+                    display: block !important;
                 }
             `;
             captureStage.appendChild(style);
 
+            // 섹션 찾기
             let sections = captureStage.querySelectorAll('section');
-            if(sections.length === 0) {
-                 sections = captureStage.querySelectorAll('.slide');
-            }
+            if(sections.length === 0) sections = captureStage.querySelectorAll('.slide');
 
             if (sections.length === 0) {
-                alert("변환할 장표(section 태그)를 찾지 못했습니다.\nHTML 구조를 확인해주세요.");
-                captureStage.innerHTML = ""; 
+                alert("변환할 장표(section 태그)를 찾지 못했습니다.");
+                resetCapture();
                 return;
             }
 
-            showLoading(true, 0);
-            captureStage.style.visibility = "visible"; 
+            // 3. 렌더링 대기 (중요: 브라우저가 그릴 시간 부여)
+            await new Promise(resolve => setTimeout(resolve, 1000));
 
             try {
                 let pptx = new PptxGenJS();
@@ -243,15 +258,15 @@
 
                 for (let i = 0; i < sections.length; i++) {
                     const sec = sections[i];
-                    
                     const percent = Math.round(((i + 1) / sections.length) * 100);
-                    updateProgress(percent, `슬라이드 ${i+1} / ${sections.length} 생성 중...`);
+                    updateProgress(percent, `슬라이드 ${i+1} / ${sections.length} 캡처 중...`);
 
                     const canvas = await html2canvas(sec, {
-                        scale: 2, 
-                        useCORS: true, 
-                        backgroundColor: "#ffffff",
-                        windowWidth: 1280
+                        scale: 2, useCORS: true, backgroundColor: "#ffffff", windowWidth: 1280,
+                        onclone: (clonedDoc) => {
+                            // 클론에서도 스크롤 위치 초기화
+                            clonedDoc.getElementById('capture-stage').scrollTop = 0;
+                        }
                     });
 
                     const imgData = canvas.toDataURL('image/png');
@@ -267,16 +282,21 @@
                     }
                 }
 
+                // [수정] 파일명 고정
                 pptx.writeFile({ fileName: "FACT BOOK.pptx" });
 
             } catch (err) {
                 console.error(err);
                 alert("오류 발생: " + err.message);
             } finally {
-                captureStage.innerHTML = ""; 
-                captureStage.style.visibility = "hidden"; 
-                showLoading(false, 0);
+                resetCapture();
             }
+        }
+
+        function resetCapture() {
+            captureStage.innerHTML = ""; 
+            captureStage.style.display = "none";
+            showLoading(false, 0);
         }
 
         function showLoading(show, percent) {
@@ -289,6 +309,7 @@
             if(text) loadingText.innerText = text;
         }
 
+        // 파일 드래그앤드롭 및 처리
         const dropZone = document.getElementById('drop-zone');
         const fileInput = document.getElementById('file-input');
         
@@ -306,40 +327,35 @@
                 reader.onload = (e) => {
                     const arrayBuffer = e.target.result;
                     
-                    // [핵심 로직] DOCX 파일 처리 개선: 코드 감지
-                    // 1. Raw Text 추출을 먼저 시도하여 파일이 '코드'를 담고 있는지 확인
+                    // [DOCX 스마트 처리: 코드 Unescape]
                     mammoth.extractRawText({arrayBuffer: arrayBuffer})
                         .then(result => {
-                            const rawText = result.value.trim();
-                            // HTML 코드로 의심되는 키워드 확인
-                            const isSourceCode = /<!DOCTYPE html>|<html|<head/i.test(rawText);
+                            let rawText = result.value.trim();
+                            // HTML 코드로 의심되는 패턴 확인
+                            const isSourceCode = /<!DOCTYPE html>|<html|<head|&lt;!DOCTYPE/i.test(rawText);
                             
                             if (isSourceCode) {
-                                // 2-A. 코드로 판단되면 -> Raw Text를 그대로 사용
+                                // 특수문자 복구 (Unescape)
+                                rawText = rawText
+                                    .replace(/&lt;/g, '<')
+                                    .replace(/&gt;/g, '>')
+                                    .replace(/&quot;/g, '"')
+                                    .replace(/&#39;/g, "'")
+                                    .replace(/&amp;/g, '&');
+
                                 document.getElementById('html-input').value = rawText;
                                 renderIframe();
                             } else {
-                                // 2-B. 일반 문서라면 -> HTML 변환 수행
+                                // 일반 문서는 HTML로 변환
                                 mammoth.convertToHtml({arrayBuffer: arrayBuffer})
                                     .then(res => {
                                         document.getElementById('html-input').value = res.value;
                                         renderIframe();
                                     })
-                                    .catch(err => {
-                                        console.error(err);
-                                        alert("문서 변환 실패: " + err.message);
-                                    });
+                                    .catch(err => { alert("문서 변환 실패"); });
                             }
                         })
-                        .catch(err => {
-                            // 추출 실패 시 일반 변환 시도
-                            mammoth.convertToHtml({arrayBuffer: arrayBuffer})
-                                .then(res => {
-                                    document.getElementById('html-input').value = res.value;
-                                    renderIframe();
-                                })
-                                .catch(err => alert("파일을 읽을 수 없습니다: " + err.message));
-                        });
+                        .catch(err => { alert("파일 읽기 오류"); });
                 };
                 reader.readAsArrayBuffer(file);
             } else {
@@ -354,3 +370,4 @@
     </script>
 </body>
 </html>
+```
