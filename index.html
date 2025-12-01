@@ -3,301 +3,215 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AI 리포트 뷰어 (Iframe Sandbox & Capture)</title>
+    <title>AI 리포트 뷰어 (Blur Fix)</title>
     
-    <!-- PPT 생성 라이브러리 -->
     <script src="https://cdn.jsdelivr.net/npm/pptxgenjs@3.12.0/dist/pptxgen.bundle.js"></script>
-    <!-- Word 변환 라이브러리 -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.6.0/mammoth.browser.min.js"></script>
-    <!-- 화면 캡처 라이브러리 (필수) -->
     <script src="https://html2canvas.hertzen.com/dist/html2canvas.min.js"></script>
 
     <style>
-        /* [기본 설정] */
-        html, body { width: 100%; height: 100%; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; display: flex; overflow: hidden; }
+        /* 레이아웃 */
+        html, body { width: 100%; height: 100%; margin: 0; padding: 0; font-family: sans-serif; display: flex; overflow: hidden; }
         
-        /* [왼쪽] 에디터 패널 */
         #editor-pane {
-            width: 320px;
-            min-width: 300px;
-            height: 100%;
-            background: #f8f9fa;
-            border-right: 1px solid #ddd;
-            display: flex;
-            flex-direction: column;
-            padding: 20px;
-            box-sizing: border-box;
-            z-index: 20;
-            box-shadow: 2px 0 10px rgba(0,0,0,0.1);
+            width: 320px; min-width: 300px; height: 100%; background: #f8f9fa; border-right: 1px solid #ddd;
+            display: flex; flex-direction: column; padding: 20px; box-sizing: border-box; z-index: 20;
         }
 
-        h2 { margin: 0 0 15px 0; font-size: 1.2rem; color: #333; }
+        .drop-zone { border: 2px dashed #bbb; padding: 20px; text-align: center; background: white; cursor: pointer; margin-bottom: 10px; font-size: 0.9em; }
+        .drop-zone:hover { border-color: #007bff; background: #f0f7ff; }
+
+        textarea { flex-grow: 1; width: 100%; padding: 12px; border: 1px solid #ccc; font-family: monospace; font-size: 11px; margin-bottom: 10px; resize: none; }
         
-        .drop-zone {
-            border: 2px dashed #bbb;
-            border-radius: 6px;
-            padding: 20px;
-            text-align: center;
-            background: white;
-            cursor: pointer;
-            margin-bottom: 10px;
-            font-size: 0.9em;
-            color: #666;
-            transition: 0.2s;
-        }
-        .drop-zone:hover { border-color: #007bff; background: #f0f7ff; color: #007bff; }
-
-        textarea {
-            flex-grow: 1;
-            width: 100%;
-            padding: 12px;
-            border: 1px solid #ccc;
-            border-radius: 4px;
-            resize: none;
-            font-family: monospace;
-            font-size: 12px;
-            margin-bottom: 10px;
-            outline: none;
-        }
-        textarea:focus { border-color: #007bff; }
-
         .btn-group { display: flex; flex-direction: column; gap: 8px; }
-        button {
-            padding: 12px;
-            border: none;
-            border-radius: 4px;
-            cursor: pointer;
-            font-weight: bold;
-            color: white;
-            font-size: 14px;
-            display: flex; justify-content: center; align-items: center; gap: 5px;
-        }
-        .btn-render { background: #007bff; } .btn-render:hover { background: #0056b3; }
-        .btn-pdf { background: #6c757d; } .btn-pdf:hover { background: #545b62; }
-        .btn-ppt { background: #28a745; } .btn-ppt:hover { background: #1e7e34; }
+        button { padding: 12px; border: none; border-radius: 4px; cursor: pointer; font-weight: bold; color: white; font-size: 14px; }
+        .btn-render { background: #007bff; }
+        .btn-pdf { background: #6c757d; }
+        .btn-ppt { background: #d35400; }
 
-        .note { font-size: 0.8em; color: #666; margin-top: 15px; background: #eee; padding: 10px; border-radius: 4px; line-height: 1.4; }
+        /* 뷰어 영역 */
+        #viewer-pane { flex-grow: 1; height: 100%; background: #525659; display: flex; flex-direction: column; position: relative; }
+        #sandbox-frame { width: 100%; height: 100%; border: none; background: white; }
 
-        /* [오른쪽] 뷰어 패널 */
-        #viewer-pane {
-            flex-grow: 1;
-            height: 100%;
-            background: #525659; /* PDF 뷰어 같은 어두운 배경 */
-            padding: 0;
-            box-sizing: border-box;
-            display: flex;
-            flex-direction: column;
-            position: relative;
-        }
-
-        /* [핵심] Iframe 샌드박스 */
-        /* 외부 사이트(ytool)와 동일한 격리 환경 제공 */
-        #sandbox-frame {
-            width: 100%;
-            height: 100%;
-            border: none;
-            background: white;
-            display: block;
-        }
-
-        /* 로딩 오버레이 */
+        /* 로딩 바 */
         #loading-overlay {
-            position: absolute; top:0; left:0; right:0; bottom:0;
-            background: rgba(0,0,0,0.7);
-            color: white;
-            display: none;
-            justify-content: center; align-items: center;
-            flex-direction: column;
-            z-index: 100;
+            position: absolute; top:0; left:0; right:0; bottom:0; background: rgba(0,0,0,0.8); color: white;
+            display: none; justify-content: center; align-items: center; flex-direction: column; z-index: 100;
         }
-        .spinner { width: 40px; height: 40px; border: 4px solid #f3f3f3; border-top: 4px solid #3498db; border-radius: 50%; animation: spin 1s linear infinite; margin-bottom: 15px; }
-        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
-
+        .progress-bar { width: 300px; height: 10px; background: #555; border-radius: 5px; margin-top: 15px; overflow: hidden; }
+        .progress-fill { height: 100%; background: #2ecc71; width: 0%; transition: width 0.3s; }
     </style>
 </head>
 <body>
 
-    <!-- 왼쪽 에디터 -->
     <div id="editor-pane">
-        <h2>🖥️ 완벽 호환 뷰어</h2>
+        <h2 style="margin:0 0 10px 0;">Clear Viewer</h2>
         
         <div id="drop-zone" class="drop-zone">
-            파일을 드래그하세요<br>
-            (HTML, TXT, DOCX)
+            파일 드래그 (HTML, TXT, DOCX)
             <input type="file" id="file-input" accept=".html,.txt,.docx" style="display:none">
         </div>
 
-        <textarea id="html-input" placeholder="HTML 코드를 붙여넣으세요.&#13;&#10;&#13;&#10;[업데이트 완료]&#13;&#10;1. 외부 사이트와 100% 동일한 렌더링 (Iframe)&#13;&#10;2. 디자인 깨짐 없는 PPT 변환 (이미지 캡처)&#13;&#10;3. 전체 페이지 PDF 인쇄 지원"></textarea>
+        <textarea id="html-input" placeholder="HTML 코드를 붙여넣으세요."></textarea>
         
         <div class="btn-group">
-            <button class="btn-render" onclick="renderIframe()">
-                <span>🔄</span> View (새로고침)
-            </button>
-            <button class="btn-pdf" onclick="printIframe()">
-                <span>📄</span> PDF 저장 (인쇄)
-            </button>
-            <button class="btn-ppt" onclick="exportPPTAsImage()">
-                <span>📊</span> PPT 다운로드 (캡처)
-            </button>
+            <button class="btn-render" onclick="renderIframe()">🔄 View (새로고침)</button>
+            <button class="btn-pdf" onclick="printIframe()">📄 PDF 저장</button>
+            <button class="btn-ppt" onclick="exportSplitPPT()">📊 PPT 다운로드</button>
         </div>
-
-        <div class="note">
-            <strong>✅ 해결 완료:</strong><br>
-            • <strong>완벽 렌더링:</strong> Iframe을 사용하여 외부 툴과 동일하게 보입니다.<br>
-            • <strong>디자인 유지:</strong> 화면을 그대로 캡처하여 PPT에 넣으므로 잘리거나 깨지지 않습니다.
+        
+        <div style="margin-top:15px; font-size:0.8em; color:#666; background:#eee; padding:10px; border-radius:4px;">
+            <strong>✅ 블러 제거됨:</strong><br>
+            애니메이션 효과를 강제로 끄고<br>항상 선명하게 보이도록 수정했습니다.
         </div>
     </div>
 
-    <!-- 오른쪽 뷰어 -->
     <div id="viewer-pane">
         <iframe id="sandbox-frame" title="Report Viewer"></iframe>
         
         <div id="loading-overlay">
-            <div class="spinner"></div>
             <div id="loading-text">처리 중...</div>
+            <div class="progress-bar"><div id="progress-fill" class="progress-fill"></div></div>
         </div>
     </div>
 
     <script>
         const frame = document.getElementById('sandbox-frame');
         const overlay = document.getElementById('loading-overlay');
+        const progressFill = document.getElementById('progress-fill');
         const loadingText = document.getElementById('loading-text');
 
-        // 1. Iframe 렌더링 (Sandbox 방식)
+        // 초기 실행
+        window.onload = function() {
+            // 예시로 비워둠 (사용자가 붙여넣기 하도록)
+        };
+
         function renderIframe() {
             const input = document.getElementById('html-input').value;
-            if (!input.trim()) { alert("코드를 입력해주세요."); return; }
-
-            // Iframe 내부에 HTML 주입
-            // ytool 등 외부 툴과 동일한 환경을 만들어주기 위해 전체 문서를 작성
             const doc = frame.contentDocument || frame.contentWindow.document;
             
             doc.open();
             doc.write(input);
             doc.close();
-            
-            // 스타일 보정 (옵션): 인쇄 시 여백 조정 등을 위해 스타일 주입
+
+            // [핵심 해결책] 블러/애니메이션 강제 제거 스타일 주입
+            // 뷰어 화면에서도 즉시 적용되도록 함
             const style = doc.createElement('style');
             style.textContent = `
-                @media print {
-                    @page { margin: 0; size: auto; }
-                    body { -webkit-print-color-adjust: exact; margin: 0; padding: 0; }
+                /* 모든 섹션 강제 선명화 */
+                section { 
+                    opacity: 1 !important; 
+                    filter: none !important; 
+                    transform: none !important; 
+                    transition: none !important;
                 }
-                /* 스크롤바 디자인 (선택) */
-                ::-webkit-scrollbar { width: 10px; }
-                ::-webkit-scrollbar-track { background: #f1f1f1; }
-                ::-webkit-scrollbar-thumb { background: #888; border-radius: 5px; }
-                ::-webkit-scrollbar-thumb:hover { background: #555; }
+                /* PDF 인쇄 시 설정 */
+                @media print {
+                    @page { margin: 1cm; size: auto; }
+                    body { background: white; -webkit-print-color-adjust: exact; }
+                    nav { display: none !important; } /* 네비게이션 숨김 */
+                    main { margin-left: 0 !important; padding: 0 !important; }
+                    section { page-break-after: always !important; display: block !important; margin-bottom: 0 !important; }
+                }
             `;
             doc.head.appendChild(style);
         }
 
-        // 2. Iframe 인쇄 (PDF 저장)
         function printIframe() {
             if (!frame.contentWindow) return;
             frame.contentWindow.focus();
             frame.contentWindow.print();
         }
 
-        // 3. PPT 변환 (이미지 캡처 방식 - 디자인 완벽 보존)
-        async function exportPPTAsImage() {
+        async function exportSplitPPT() {
             const doc = frame.contentDocument || frame.contentWindow.document;
+            const sections = doc.querySelectorAll('section'); // main section 대신 넓게 잡음
             
-            // 사용자의 HTML 구조 분석 (섹션 찾기)
-            // 보통 <section> 태그를 쓰거나, 특정 클래스로 슬라이드를 구분함
-            // 만약 구조가 없다면 전체를 하나로 캡처
-            let slides = doc.querySelectorAll('section');
-            if (slides.length === 0) {
-                // section이 없으면 .slide 클래스나, 최상위 div의 자식들을 시도
-                slides = doc.querySelectorAll('.slide');
-            }
-            if (slides.length === 0) {
-                // 그래도 없으면 body 전체를 하나로 취급 (또는 수동 분할 로직 필요)
-                // 여기서는 사용자의 리포트 구조(section)가 있다고 가정하거나 전체를 찍음
-                if(confirm("슬라이드(<section> 또는 .slide)를 찾을 수 없습니다.\n전체 화면을 하나의 장표로 만드시겠습니까?")) {
-                    slides = [doc.body];
-                } else {
-                    return;
-                }
+            if (sections.length === 0) {
+                alert("PPT로 변환할 섹션(<section>)이 없습니다. HTML 구조를 확인해주세요.");
+                return;
             }
 
-            showLoading(true, "PPT 생성 중... (화면 캡처)");
+            showLoading(true, 0);
+
+            // 캡처용 스타일 강제 주입 (사이드바 제거, 마진 제거)
+            const captureStyle = doc.createElement('style');
+            captureStyle.id = 'capture-cleaner';
+            captureStyle.textContent = `
+                body { overflow: hidden !important; background: white !important; }
+                nav { display: none !important; }
+                main { margin-left: 0 !important; padding: 20px !important; width: 100% !important; }
+                section { 
+                    opacity: 1 !important; 
+                    filter: none !important; 
+                    transform: none !important; 
+                    margin-bottom: 50px !important;
+                    box-shadow: none !important; 
+                    border: none !important;
+                }
+            `;
+            doc.head.appendChild(captureStyle);
+            doc.documentElement.scrollTop = 0;
 
             try {
                 let pptx = new PptxGenJS();
                 pptx.layout = 'LAYOUT_16x9'; 
 
-                // 순차적으로 캡처
-                for (let i = 0; i < slides.length; i++) {
-                    const slideElem = slides[i];
+                for (let i = 0; i < sections.length; i++) {
+                    const sec = sections[i];
                     
-                    // html2canvas로 해당 요소 캡처
-                    // iframe 내부 요소 캡처를 위해 window 객체 전달 필요할 수 있음
-                    // 여기서는 iframe 내부에서 캡처하는 것이 가장 정확하므로,
-                    // html2canvas 라이브러리가 iframe 내부에도 로드되어야 할 수도 있음.
-                    // -> 간단한 해결책: 메인 윈도우의 html2canvas를 사용하여 iframe body 캡처 (CORS 제한 없음)
-                    
-                    // 캡처 전 스타일 조정 (배경색 흰색 강제 등)
-                    const originalBg = slideElem.style.backgroundColor;
-                    if (!originalBg) slideElem.style.backgroundColor = "white";
+                    // 진행률
+                    const percent = Math.round(((i + 1) / sections.length) * 100);
+                    updateProgress(percent, `슬라이드 ${i+1} / ${sections.length} 처리 중...`);
 
-                    // html2canvas 옵션: scale을 높여 고화질 캡처
-                    const canvas = await html2canvas(slideElem, {
-                        scale: 2, // 2배 해상도
-                        useCORS: true,
-                        windowWidth: slideElem.scrollWidth,
-                        windowHeight: slideElem.scrollHeight
-                    });
+                    // 배경 강제 흰색
+                    sec.style.backgroundColor = "#ffffff";
                     
-                    // 복구
-                    slideElem.style.backgroundColor = originalBg;
+                    // 캡처
+                    const canvas = await html2canvas(sec, {
+                        scale: 2,
+                        useCORS: true,
+                        backgroundColor: "#ffffff",
+                        windowWidth: 1280
+                    });
 
                     const imgData = canvas.toDataURL('image/png');
-
-                    // PPT 슬라이드 추가
                     let slide = pptx.addSlide();
                     
-                    // 이미지를 슬라이드에 꽉 차게 넣기 (비율 유지)
-                    // 이미지 비율 계산
+                    // 이미지 비율 계산 및 Fit
                     const imgRatio = canvas.width / canvas.height;
-                    const slideRatio = 16 / 9; // PPT 기본 비율
+                    const pptRatio = 16 / 9;
                     
-                    let w, h, x, y;
-                    
-                    if (imgRatio > slideRatio) {
-                        // 이미지가 더 납작함 -> 가로를 꽉 채움
-                        w = "100%";
-                        h = (100 / imgRatio * slideRatio) + "%"; // 높이 자동 계산
-                        x = 0;
-                        y = (100 - parseFloat(h)) / 2 + "%"; // 수직 중앙 정렬
+                    if (imgRatio < pptRatio) {
+                        slide.addImage({ data: imgData, x: "center", y: "center", h: "95%", w: "auto" });
                     } else {
-                        // 이미지가 더 길쭉함 -> 세로를 꽉 채움
-                        h = "100%";
-                        w = (100 * imgRatio / slideRatio) + "%";
-                        y = 0;
-                        x = (100 - parseFloat(w)) / 2 + "%"; // 수평 중앙 정렬
+                        slide.addImage({ data: imgData, x: "center", y: "center", w: "95%", h: "auto" });
                     }
-
-                    slide.addImage({ data: imgData, x: x, y: y, w: w, h: h });
                 }
 
-                pptx.writeFile({ fileName: `Capture_Slides_${new Date().toISOString().slice(0,10)}.pptx` });
+                pptx.writeFile({ fileName: `Clear_Report_${new Date().toISOString().slice(0,10)}.pptx` });
 
             } catch (err) {
                 console.error(err);
-                alert("PPT 생성 중 오류가 발생했습니다: " + err.message);
+                alert("PPT 오류: " + err.message);
             } finally {
-                showLoading(false);
+                const cleaner = doc.getElementById('capture-cleaner');
+                if (cleaner) cleaner.remove();
+                showLoading(false, 0);
             }
         }
 
-        // 로딩 UI 제어
-        function showLoading(show, text) {
+        function showLoading(show, percent) {
             overlay.style.display = show ? 'flex' : 'none';
-            if (text) loadingText.innerText = text;
+            if(show) updateProgress(percent);
         }
 
-        // 파일 처리
+        function updateProgress(percent, text) {
+            progressFill.style.width = percent + "%";
+            if(text) loadingText.innerText = text;
+        }
+
+        // 파일 드래그앤드롭
         const dropZone = document.getElementById('drop-zone');
         const fileInput = document.getElementById('file-input');
         
@@ -309,19 +223,17 @@
 
         function handleFile(file) {
             if (!file) return;
+            const reader = new FileReader();
+            
             if (file.name.endsWith('.docx')) {
-                const reader = new FileReader();
                 reader.onload = (e) => {
-                    mammoth.convertToHtml({arrayBuffer: e.target.result})
-                        .then(res => {
-                            document.getElementById('html-input').value = res.value; // Word는 section 구분이 없으므로 주의
-                            renderIframe();
-                        })
-                        .catch(err => alert(err));
+                    mammoth.convertToHtml({arrayBuffer: e.target.result}).then(res => {
+                        document.getElementById('html-input').value = res.value;
+                        renderIframe();
+                    });
                 };
                 reader.readAsArrayBuffer(file);
             } else {
-                const reader = new FileReader();
                 reader.onload = (e) => {
                     document.getElementById('html-input').value = e.target.result;
                     renderIframe();
