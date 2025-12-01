@@ -3,7 +3,6 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <!-- [수정] 타이틀을 'FACT BOOK'으로 설정하면 PDF 저장 시 파일명이 됩니다 -->
     <title>FACT BOOK</title>
     
     <!-- Google Fonts -->
@@ -113,7 +112,6 @@
 </head>
 <body>
 
-    <!-- [핵심] PPT 변환을 위해 문서를 복제할 장소 -->
     <div id="capture-stage"></div>
 
     <div id="editor-pane">
@@ -202,7 +200,6 @@
             frame.contentWindow.print();
         }
 
-        // [중요 수정] PPT 변환 함수: Iframe 밖에서 복제 촬영
         async function exportPPTFromClone() {
             const inputHtml = document.getElementById('html-input').value;
             if (!inputHtml.trim()) {
@@ -210,14 +207,10 @@
                 return;
             }
 
-            // 1. 숨겨진 스테이지에 HTML 내용을 그대로 복사
             captureStage.innerHTML = inputHtml;
             
-            // 2. 캡처용 스타일 강제 주입 (사이드바 제거, 레이아웃 정렬)
-            // Iframe 보안 문제를 우회하기 위해 메인 윈도우(captureStage)에서 렌더링
             const style = document.createElement('style');
             style.textContent = `
-                /* 캡처 시 불필요한 요소 제거 및 스타일 초기화 */
                 #capture-stage nav { display: none !important; }
                 #capture-stage body { background: white; width: 1280px; overflow: hidden; }
                 #capture-stage main { margin-left: 0 !important; padding: 40px !important; width: 100% !important; box-sizing: border-box; }
@@ -225,28 +218,24 @@
                     opacity: 1 !important; filter: none !important; transform: none !important; 
                     margin-bottom: 50px !important; box-shadow: none !important; border: none !important;
                     page-break-after: always;
-                    background: white; /* 투명 배경 방지 */
+                    background: white; 
                 }
             `;
             captureStage.appendChild(style);
 
-            // 3. 렌더링 된 요소 찾기
-            // 사용자의 HTML 구조에 따라 section이 main 안에 있을 수도, body 바로 밑에 있을 수도 있음
             let sections = captureStage.querySelectorAll('section');
             if(sections.length === 0) {
-                 // section 태그가 없으면 .slide 클래스 찾기
                  sections = captureStage.querySelectorAll('.slide');
             }
 
             if (sections.length === 0) {
                 alert("변환할 장표(section 태그)를 찾지 못했습니다.\nHTML 구조를 확인해주세요.");
-                captureStage.innerHTML = ""; // 초기화
+                captureStage.innerHTML = ""; 
                 return;
             }
 
-            // 4. PPT 생성 시작
             showLoading(true, 0);
-            captureStage.style.visibility = "visible"; // 캡처를 위해 잠깐 보이게 함 (좌표는 화면 밖)
+            captureStage.style.visibility = "visible"; 
 
             try {
                 let pptx = new PptxGenJS();
@@ -255,14 +244,12 @@
                 for (let i = 0; i < sections.length; i++) {
                     const sec = sections[i];
                     
-                    // 진행률 업데이트
                     const percent = Math.round(((i + 1) / sections.length) * 100);
                     updateProgress(percent, `슬라이드 ${i+1} / ${sections.length} 생성 중...`);
 
-                    // html2canvas로 캡처 (이제 같은 도메인이므로 보안 에러 없음)
                     const canvas = await html2canvas(sec, {
-                        scale: 2, // 2배 고해상도
-                        useCORS: true, // 이미지 로딩 허용
+                        scale: 2, 
+                        useCORS: true, 
                         backgroundColor: "#ffffff",
                         windowWidth: 1280
                     });
@@ -270,33 +257,28 @@
                     const imgData = canvas.toDataURL('image/png');
                     let slide = pptx.addSlide();
                     
-                    // 이미지 Fit 계산
                     const imgRatio = canvas.width / canvas.height;
                     const pptRatio = 16 / 9;
                     
                     if (imgRatio < pptRatio) {
-                        // 세로가 긴 경우 높이 맞춤
                         slide.addImage({ data: imgData, x: "center", y: "center", h: "95%", w: "auto" });
                     } else {
-                        // 가로가 긴 경우 너비 맞춤
                         slide.addImage({ data: imgData, x: "center", y: "center", w: "95%", h: "auto" });
                     }
                 }
 
-                // [수정] 파일명 'FACT BOOK'으로 고정
                 pptx.writeFile({ fileName: "FACT BOOK.pptx" });
 
             } catch (err) {
                 console.error(err);
                 alert("오류 발생: " + err.message);
             } finally {
-                captureStage.innerHTML = ""; // 스테이지 초기화
-                captureStage.style.visibility = "hidden"; // 다시 숨김
+                captureStage.innerHTML = ""; 
+                captureStage.style.visibility = "hidden"; 
                 showLoading(false, 0);
             }
         }
 
-        // 로딩 UI
         function showLoading(show, percent) {
             overlay.style.display = show ? 'flex' : 'none';
             if(show) updateProgress(percent);
@@ -307,7 +289,6 @@
             if(text) loadingText.innerText = text;
         }
 
-        // 파일 처리
         const dropZone = document.getElementById('drop-zone');
         const fileInput = document.getElementById('file-input');
         
@@ -319,17 +300,50 @@
 
         function handleFile(file) {
             if (!file) return;
-            const reader = new FileReader();
             
             if (file.name.endsWith('.docx')) {
+                const reader = new FileReader();
                 reader.onload = (e) => {
-                    mammoth.convertToHtml({arrayBuffer: e.target.result}).then(res => {
-                        document.getElementById('html-input').value = res.value;
-                        renderIframe();
-                    });
+                    const arrayBuffer = e.target.result;
+                    
+                    // [핵심 로직] DOCX 파일 처리 개선: 코드 감지
+                    // 1. Raw Text 추출을 먼저 시도하여 파일이 '코드'를 담고 있는지 확인
+                    mammoth.extractRawText({arrayBuffer: arrayBuffer})
+                        .then(result => {
+                            const rawText = result.value.trim();
+                            // HTML 코드로 의심되는 키워드 확인
+                            const isSourceCode = /<!DOCTYPE html>|<html|<head/i.test(rawText);
+                            
+                            if (isSourceCode) {
+                                // 2-A. 코드로 판단되면 -> Raw Text를 그대로 사용
+                                document.getElementById('html-input').value = rawText;
+                                renderIframe();
+                            } else {
+                                // 2-B. 일반 문서라면 -> HTML 변환 수행
+                                mammoth.convertToHtml({arrayBuffer: arrayBuffer})
+                                    .then(res => {
+                                        document.getElementById('html-input').value = res.value;
+                                        renderIframe();
+                                    })
+                                    .catch(err => {
+                                        console.error(err);
+                                        alert("문서 변환 실패: " + err.message);
+                                    });
+                            }
+                        })
+                        .catch(err => {
+                            // 추출 실패 시 일반 변환 시도
+                            mammoth.convertToHtml({arrayBuffer: arrayBuffer})
+                                .then(res => {
+                                    document.getElementById('html-input').value = res.value;
+                                    renderIframe();
+                                })
+                                .catch(err => alert("파일을 읽을 수 없습니다: " + err.message));
+                        });
                 };
                 reader.readAsArrayBuffer(file);
             } else {
+                const reader = new FileReader();
                 reader.onload = (e) => {
                     document.getElementById('html-input').value = e.target.result;
                     renderIframe();
