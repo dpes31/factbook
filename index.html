@@ -187,12 +187,25 @@
             // 뷰어용 스타일 주입
             const style = doc.createElement('style');
             style.textContent = `
+                /* [수정] 본문 패딩을 조정하여 네비게이션과 겹치지 않게 함 */
+                main { 
+                    margin-left: 280px !important; /* 사이드바 너비(280px) 확보 */
+                    padding: 60px 80px !important; /* 내부 여백 넉넉하게 */
+                    width: calc(100% - 280px) !important;
+                    box-sizing: border-box;
+                }
+                
+                /* [수정] 섹션 제목 위 여백 추가 */
+                h2.section-title { margin-top: 60px !important; scroll-margin-top: 80px; }
+                section:first-child h2.section-title { margin-top: 0 !important; }
+
                 section { opacity: 1 !important; filter: none !important; transform: none !important; transition: none !important; }
+                
                 @media print {
                     @page { margin: 1cm; size: auto; }
                     body { background: white; -webkit-print-color-adjust: exact; }
                     nav { display: none !important; } 
-                    main { margin-left: 0 !important; padding: 0 !important; }
+                    main { margin-left: 0 !important; padding: 0 !important; width: 100% !important; }
                     section { page-break-after: always !important; display: block !important; margin-bottom: 0 !important; }
                 }
             `;
@@ -370,4 +383,3 @@
     </script>
 </body>
 </html>
-```
